@@ -22,6 +22,14 @@ static void set_source_u32_alpha(cairo_t *cairo, uint32_t color, double alpha_mu
 		a);
 }
 
+static double get_box_radius(struct slurp_output *output, double w, double h, double default_radius) {
+	// Fullscreen monitor outputs have sharp rectangular corners
+	if (w >= output->logical_geometry.width - 2 && h >= output->logical_geometry.height - 2) {
+		return 0.0;
+	}
+	return default_radius;
+}
+
 static void draw_rounded_rect(cairo_t *cairo, double x, double y, double w, double h, double r) {
 	if (r <= 0.0 || w <= 0.0 || h <= 0.0) {
 		cairo_rectangle(cairo, x, y, w, h);
@@ -54,9 +62,10 @@ void render(struct slurp_output *output) {
 	struct slurp_box *choice_box;
 	wl_list_for_each(choice_box, &state->boxes, link) {
 		if (box_intersect(&output->logical_geometry, choice_box)) {
+			double r = get_box_radius(output, choice_box->width, choice_box->height, state->border_radius);
 			set_source_u32(cairo, state->colors.choice);
 			draw_rounded_rect(cairo, choice_box->x, choice_box->y,
-				choice_box->width, choice_box->height, state->border_radius);
+				choice_box->width, choice_box->height, r);
 			cairo_fill(cairo);
 		}
 	}
@@ -88,8 +97,9 @@ void render(struct slurp_output *output) {
 				.height = (int32_t)seat->anim.height,
 			};
 			if (box_intersect(&output->logical_geometry, &anim_geom)) {
+				double r = get_box_radius(output, seat->anim.width, seat->anim.height, state->border_radius);
 				draw_rounded_rect(cairo, seat->anim.x, seat->anim.y,
-					seat->anim.width, seat->anim.height, state->border_radius);
+					seat->anim.width, seat->anim.height, r);
 				set_source_u32_alpha(cairo, state->colors.selection, seat->anim.alpha);
 				cairo_fill_preserve(cairo);
 
@@ -106,8 +116,9 @@ void render(struct slurp_output *output) {
 			}
 			struct slurp_box *sel_box = &current_selection->selection;
 
+			double r = get_box_radius(output, sel_box->width, sel_box->height, state->border_radius);
 			draw_rounded_rect(cairo, sel_box->x, sel_box->y,
-				sel_box->width, sel_box->height, state->border_radius);
+				sel_box->width, sel_box->height, r);
 			set_source_u32(cairo, state->colors.selection);
 			cairo_fill_preserve(cairo);
 

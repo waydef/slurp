@@ -54,22 +54,26 @@ static void move_seat(struct slurp_seat *seat, wl_fixed_t surface_x,
 	current_selection->y = y;
 }
 
-static double distance_to_box(const struct slurp_box *box, int x, int y) {
-	double dx = 0;
+static bool in_horizontal_gap(const struct slurp_box *box, int x, int y, double threshold) {
+	// Must be strictly within the vertical height of the window (no vertical padding)
+	if (y < box->y || y > box->y + box->height) {
+		return false;
+	}
+	// And within horizontal gap threshold (left or right)
+	if (x >= box->x - threshold && x <= box->x + box->width + threshold) {
+		return true;
+	}
+	return false;
+}
+
+static double horizontal_dist(const struct slurp_box *box, int x) {
 	if (x < box->x) {
-		dx = box->x - x;
-	} else if (x > box->x + box->width) {
-		dx = x - (box->x + box->width);
+		return box->x - x;
 	}
-
-	double dy = 0;
-	if (y < box->y) {
-		dy = box->y - y;
-	} else if (y > box->y + box->height) {
-		dy = y - (box->y + box->height);
+	if (x > box->x + box->width) {
+		return x - (box->x + box->width);
 	}
-
-	return sqrt(dx * dx + dy * dy);
+	return 0.0;
 }
 
 static void seat_update_selection(struct slurp_seat *seat) {
@@ -103,13 +107,13 @@ static void seat_update_selection(struct slurp_seat *seat) {
 		seat->pointer_selection.selection = *direct_win;
 		seat->pointer_selection.has_selection = true;
 	} else {
-		// 2. Proximity gap bridging between adjacent windows (within 35px)
+		// 2. Horizontal-only gap bridging between left and right window splits (within 35px horizontally, strictly within vertical window bounds)
 		struct slurp_box *closest_win = NULL;
 		double min_dist = 35.0;
 		wl_list_for_each(box, &seat->state->boxes, link) {
 			int32_t area = box_size(box);
-			if (area < max_box_area) {
-				double d = distance_to_box(box, px, py);
+			if (area < max_box_area && in_horizontal_gap(box, px, py, min_dist)) {
+				double d = horizontal_dist(box, px);
 				if (d < min_dist) {
 					min_dist = d;
 					closest_win = box;
@@ -121,7 +125,7 @@ static void seat_update_selection(struct slurp_seat *seat) {
 			seat->pointer_selection.selection = *closest_win;
 			seat->pointer_selection.has_selection = true;
 		} else {
-			// 3. Fallback to desktop/monitor output box in outer margins
+			// 3. Immediate fallback to desktop/monitor output box when in top/bottom panels or empty margins
 			wl_list_for_each(box, &seat->state->boxes, link) {
 				if (in_box(box, px, py)) {
 					if (seat->pointer_selection.has_selection &&
