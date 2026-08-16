@@ -128,32 +128,31 @@ void render(struct slurp_output *output) {
 			}
 		}
 
-		// 3. Active manual drag selection
+		// 3. Active manual drag selection (always sharp square rectangle)
 		if (seat->button_state == WL_POINTER_BUTTON_STATE_PRESSED && current_selection->has_selection) {
 			if (!box_intersect(&output->logical_geometry, &current_selection->selection)) {
 				continue;
 			}
 			struct slurp_box *sel_box = &current_selection->selection;
-			double r = get_box_radius(output, sel_box->width, sel_box->height, state->border_radius);
 
 			if (state->bg_image) {
 				cairo_save(cairo);
-				draw_rounded_rect(cairo, sel_box->x, sel_box->y,
-					sel_box->width, sel_box->height, r);
+				cairo_rectangle(cairo, sel_box->x, sel_box->y,
+					sel_box->width, sel_box->height);
 				cairo_clip(cairo);
 				cairo_set_source_surface(cairo, state->bg_image,
 					-output->logical_geometry.x, -output->logical_geometry.y);
 				cairo_paint(cairo);
 				cairo_restore(cairo);
 			} else {
-				draw_rounded_rect(cairo, sel_box->x, sel_box->y,
-					sel_box->width, sel_box->height, r);
+				cairo_rectangle(cairo, sel_box->x, sel_box->y,
+					sel_box->width, sel_box->height);
 				set_source_u32(cairo, state->colors.selection);
 				cairo_fill(cairo);
 			}
 
-			draw_rounded_rect(cairo, sel_box->x, sel_box->y,
-				sel_box->width, sel_box->height, r);
+			cairo_rectangle(cairo, sel_box->x, sel_box->y,
+				sel_box->width, sel_box->height);
 			cairo_set_line_width(cairo, state->border_weight);
 			set_source_u32(cairo, state->colors.border);
 			cairo_stroke(cairo);
