@@ -60,6 +60,8 @@ struct slurp_state {
   double border_radius;
   double bg_alpha;
   bool exiting;
+  bool has_initial_cursor;
+  int32_t initial_cursor_x, initial_cursor_y;
   cairo_surface_t *bg_image;
   struct slurp_box result;
 };

@@ -1140,8 +1140,13 @@ int main(int argc, char *argv[]) {
 	char *format = "%x,%y %wx%h\n";
 	bool output_boxes = false;
 	int w, h;
-	while ((opt = getopt(argc, argv, "hdb:c:s:B:w:proa:f:F:xR:i:")) != -1) {
+	while ((opt = getopt(argc, argv, "hdb:c:s:B:w:proa:f:F:xR:i:P:")) != -1) {
 		switch (opt) {
+		case 'P':
+			if (sscanf(optarg, "%d,%d", &state.initial_cursor_x, &state.initial_cursor_y) == 2) {
+				state.has_initial_cursor = true;
+			}
+			break;
 		case 'i':
 			state.bg_image = load_ppm(optarg);
 			break;
@@ -1334,6 +1339,20 @@ int main(int argc, char *argv[]) {
 	wl_list_for_each(seat, &state.seats, link) {
 		seat->cursor_surface =
 			wl_compositor_create_surface(state.compositor);
+		if (state.has_initial_cursor) {
+			seat->pointer_selection.x = state.initial_cursor_x;
+			seat->pointer_selection.y = state.initial_cursor_y;
+			seat_update_selection(seat);
+			if (seat->pointer_selection.has_selection) {
+				seat->anim.x = seat->pointer_selection.selection.x;
+				seat->anim.y = seat->pointer_selection.selection.y;
+				seat->anim.width = seat->pointer_selection.selection.width;
+				seat->anim.height = seat->pointer_selection.selection.height;
+				seat->anim.radius = state.border_radius;
+				seat->anim.alpha = 1.0;
+				seat->anim.active = true;
+			}
+		}
 	}
 
 	state.running = true;
