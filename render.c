@@ -53,29 +53,17 @@ void render(struct slurp_output *output) {
 	struct pool_buffer *buffer = output->current_buffer;
 	cairo_t *cairo = buffer->cairo;
 
-	// Clear
+	// 1. Smoothly fade in uniform background veil
 	cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
 	set_source_u32_alpha(cairo, state->colors.background, state->bg_alpha);
 	cairo_paint(cairo);
-
-	// Draw base option boxes from input
-	struct slurp_box *choice_box;
-	wl_list_for_each(choice_box, &state->boxes, link) {
-		if (box_intersect(&output->logical_geometry, choice_box)) {
-			double r = get_box_radius(output, choice_box->width, choice_box->height, state->border_radius);
-			set_source_u32(cairo, state->colors.choice);
-			draw_rounded_rect(cairo, choice_box->x, choice_box->y,
-				choice_box->width, choice_box->height, r);
-			cairo_fill(cairo);
-		}
-	}
 
 	struct slurp_seat *seat;
 	wl_list_for_each(seat, &state->seats, link) {
 		struct slurp_selection *current_selection =
 			slurp_seat_current_selection(seat);
 
-		// 1. Crosshairs if enabled
+		// Crosshairs if enabled
 		if (!current_selection->has_selection && state->crosshairs) {
 			struct slurp_box *output_box = &output->logical_geometry;
 			if (in_box(output_box, current_selection->x, current_selection->y)) {
@@ -87,9 +75,10 @@ void render(struct slurp_output *output) {
 			}
 		}
 
-		// 2. Smooth animated hover highlight over windows
+		// 2. Smooth animated hover highlight over windows (fades in together with bg_alpha)
+		double effective_alpha = seat->anim.alpha * state->bg_alpha;
 		if (seat->button_state == WL_POINTER_BUTTON_STATE_RELEASED &&
-				seat->anim.active && seat->anim.alpha > 0.005) {
+				seat->anim.active && effective_alpha > 0.005) {
 			struct slurp_box anim_geom = {
 				.x = (int32_t)seat->anim.x,
 				.y = (int32_t)seat->anim.y,
@@ -100,11 +89,11 @@ void render(struct slurp_output *output) {
 				double r = get_box_radius(output, seat->anim.width, seat->anim.height, state->border_radius);
 				draw_rounded_rect(cairo, seat->anim.x, seat->anim.y,
 					seat->anim.width, seat->anim.height, r);
-				set_source_u32_alpha(cairo, state->colors.selection, seat->anim.alpha);
+				set_source_u32_alpha(cairo, state->colors.selection, effective_alpha);
 				cairo_fill_preserve(cairo);
 
 				cairo_set_line_width(cairo, state->border_weight);
-				set_source_u32_alpha(cairo, state->colors.border, seat->anim.alpha);
+				set_source_u32_alpha(cairo, state->colors.border, effective_alpha);
 				cairo_stroke(cairo);
 			}
 		}

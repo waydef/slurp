@@ -655,12 +655,13 @@ static const struct wl_callback_listener output_frame_listener;
 
 static bool update_animations(struct slurp_state *state) {
 	bool animating = false;
-	double speed = 0.24;
+	double bg_speed = 0.16;
+	double anim_speed = 0.22;
 
 	// 1. Smoothly fade in background veil on startup
 	if (state->bg_alpha < 1.0) {
-		state->bg_alpha += (1.0 - state->bg_alpha) * 0.20;
-		if (1.0 - state->bg_alpha > 0.01) {
+		state->bg_alpha += (1.0 - state->bg_alpha) * bg_speed;
+		if (1.0 - state->bg_alpha > 0.005) {
 			animating = true;
 		} else {
 			state->bg_alpha = 1.0;
@@ -674,22 +675,22 @@ static bool update_animations(struct slurp_state *state) {
 		}
 		if (seat->pointer_selection.has_selection && seat->button_state == WL_POINTER_BUTTON_STATE_RELEASED) {
 			struct slurp_box *target = &seat->pointer_selection.selection;
-			seat->anim.x += (target->x - seat->anim.x) * speed;
-			seat->anim.y += (target->y - seat->anim.y) * speed;
-			seat->anim.width += (target->width - seat->anim.width) * speed;
-			seat->anim.height += (target->height - seat->anim.height) * speed;
-			seat->anim.alpha += (1.0 - seat->anim.alpha) * speed;
+			seat->anim.x += (target->x - seat->anim.x) * anim_speed;
+			seat->anim.y += (target->y - seat->anim.y) * anim_speed;
+			seat->anim.width += (target->width - seat->anim.width) * anim_speed;
+			seat->anim.height += (target->height - seat->anim.height) * anim_speed;
+			seat->anim.alpha += (1.0 - seat->anim.alpha) * anim_speed;
 
 			if (fabs(seat->anim.x - target->x) > 0.5 ||
 			    fabs(seat->anim.y - target->y) > 0.5 ||
 			    fabs(seat->anim.width - target->width) > 0.5 ||
 			    fabs(seat->anim.height - target->height) > 0.5 ||
-			    fabs(1.0 - seat->anim.alpha) > 0.01) {
+			    fabs(1.0 - seat->anim.alpha) > 0.005) {
 				animating = true;
 			}
 		} else {
-			seat->anim.alpha += (0.0 - seat->anim.alpha) * speed;
-			if (seat->anim.alpha > 0.01) {
+			seat->anim.alpha += (0.0 - seat->anim.alpha) * anim_speed;
+			if (seat->anim.alpha > 0.005) {
 				animating = true;
 			} else {
 				seat->anim.alpha = 0.0;
