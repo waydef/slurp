@@ -861,6 +861,7 @@ static const char usage[] =
 	"  -r           Restrict selection to predefined boxes.\n"
 	"  -a w:h       Force aspect ratio.\n"
 	"  -R r         Set border radius (default: 20).\n"
+	"  -i path      Set background image snapshot (PPM format).\n"
 	"  -x           Display crosshairs across active display output.\n";
 
 uint32_t parse_color(const char *color) {
@@ -1014,6 +1015,59 @@ static bool create_cursors(struct slurp_state *state) {
 	return true;
 }
 
+static cairo_surface_t *load_ppm(const char *path) {
+	FILE *f = fopen(path, "rb");
+	if (!f) {
+		return NULL;
+	}
+
+	char magic[3];
+	if (fscanf(f, "%2s", magic) != 1 || strcmp(magic, "P6") != 0) {
+		fclose(f);
+		return NULL;
+	}
+
+	int w = 0, h = 0, max_val = 0;
+	if (fscanf(f, "%d %d %d", &w, &h, &max_val) != 3 || max_val != 255 || w <= 0 || h <= 0) {
+		fclose(f);
+		return NULL;
+	}
+	fgetc(f);
+
+	cairo_surface_t *surf = cairo_image_surface_create(CAIRO_FORMAT_RGB24, w, h);
+	if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS) {
+		fclose(f);
+		return NULL;
+	}
+
+	unsigned char *cairo_data = cairo_image_surface_get_data(surf);
+	int stride = cairo_image_surface_get_stride(surf);
+	unsigned char *rgb_row = malloc(w * 3);
+	if (!rgb_row) {
+		fclose(f);
+		cairo_surface_destroy(surf);
+		return NULL;
+	}
+
+	for (int y = 0; y < h; y++) {
+		if (fread(rgb_row, 1, w * 3, f) != (size_t)(w * 3)) {
+			break;
+		}
+		uint32_t *cairo_row = (uint32_t *)(cairo_data + y * stride);
+		for (int x = 0; x < w; x++) {
+			uint8_t r = rgb_row[x * 3];
+			uint8_t g = rgb_row[x * 3 + 1];
+			uint8_t b = rgb_row[x * 3 + 2];
+			cairo_row[x] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+		}
+	}
+
+	free(rgb_row);
+	fclose(f);
+	cairo_surface_mark_dirty(surf);
+	return surf;
+}
+
 int main(int argc, char *argv[]) {
 	int status = EXIT_SUCCESS;
 
@@ -1027,6 +1081,7 @@ int main(int argc, char *argv[]) {
 		.border_weight = 2,
 		.border_radius = 20.0,
 		.bg_alpha = 0.0,
+		.bg_image = NULL,
 		.display_dimensions = false,
 		.restrict_selection = false,
 		.resizing_selection = false,
@@ -1039,8 +1094,11 @@ int main(int argc, char *argv[]) {
 	char *format = "%x,%y %wx%h\n";
 	bool output_boxes = false;
 	int w, h;
-	while ((opt = getopt(argc, argv, "hdb:c:s:B:w:proa:f:F:xR:")) != -1) {
+	while ((opt = getopt(argc, argv, "hdb:c:s:B:w:proa:f:F:xR:i:")) != -1) {
 		switch (opt) {
+		case 'i':
+			state.bg_image = load_ppm(optarg);
+			break;
 		case 'h':
 			printf("%s", usage);
 			return EXIT_SUCCESS;
@@ -1283,6 +1341,10 @@ int main(int argc, char *argv[]) {
 	if (result_str) {
 		printf("%s", result_str);
 		free(result_str);
+	}
+
+	if (state.bg_image) {
+		cairo_surface_destroy(state.bg_image);
 	}
 
 	return status;

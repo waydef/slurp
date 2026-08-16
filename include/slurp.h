@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <cairo/cairo.h>
 #include <wayland-client.h>
 
 #include "box.h"
@@ -58,6 +59,7 @@ struct slurp_state {
 
   double border_radius;
   double bg_alpha;
+  cairo_surface_t *bg_image;
   struct slurp_box result;
 };
 

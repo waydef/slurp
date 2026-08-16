@@ -53,10 +53,24 @@ void render(struct slurp_output *output) {
 	struct pool_buffer *buffer = output->current_buffer;
 	cairo_t *cairo = buffer->cairo;
 
-	// 1. Smoothly fade in uniform background veil
-	cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
-	set_source_u32_alpha(cairo, state->colors.background, state->bg_alpha);
-	cairo_paint(cairo);
+	// 1. Draw base frame
+	if (state->bg_image) {
+		// Draw frozen snapshot
+		cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
+		cairo_set_source_surface(cairo, state->bg_image,
+			-output->logical_geometry.x, -output->logical_geometry.y);
+		cairo_paint(cairo);
+
+		// Draw smooth white veil over it
+		cairo_set_operator(cairo, CAIRO_OPERATOR_OVER);
+		set_source_u32_alpha(cairo, state->colors.background, state->bg_alpha);
+		cairo_paint(cairo);
+	} else {
+		// Standalone transparent overlay mode
+		cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
+		set_source_u32_alpha(cairo, state->colors.background, state->bg_alpha);
+		cairo_paint(cairo);
+	}
 
 	struct slurp_seat *seat;
 	wl_list_for_each(seat, &state->seats, link) {
@@ -87,11 +101,27 @@ void render(struct slurp_output *output) {
 			};
 			if (box_intersect(&output->logical_geometry, &anim_geom)) {
 				double r = get_box_radius(output, seat->anim.width, seat->anim.height, state->border_radius);
+
+				if (state->bg_image) {
+					// Cutout reveals original crystal-clear frozen image
+					cairo_save(cairo);
+					draw_rounded_rect(cairo, seat->anim.x, seat->anim.y,
+						seat->anim.width, seat->anim.height, r);
+					cairo_clip(cairo);
+					cairo_set_source_surface(cairo, state->bg_image,
+						-output->logical_geometry.x, -output->logical_geometry.y);
+					cairo_paint_with_alpha(cairo, effective_alpha);
+					cairo_restore(cairo);
+				} else {
+					draw_rounded_rect(cairo, seat->anim.x, seat->anim.y,
+						seat->anim.width, seat->anim.height, r);
+					set_source_u32_alpha(cairo, state->colors.selection, effective_alpha);
+					cairo_fill(cairo);
+				}
+
+				// Draw crisp 1px border
 				draw_rounded_rect(cairo, seat->anim.x, seat->anim.y,
 					seat->anim.width, seat->anim.height, r);
-				set_source_u32_alpha(cairo, state->colors.selection, effective_alpha);
-				cairo_fill_preserve(cairo);
-
 				cairo_set_line_width(cairo, state->border_weight);
 				set_source_u32_alpha(cairo, state->colors.border, effective_alpha);
 				cairo_stroke(cairo);
@@ -104,13 +134,26 @@ void render(struct slurp_output *output) {
 				continue;
 			}
 			struct slurp_box *sel_box = &current_selection->selection;
-
 			double r = get_box_radius(output, sel_box->width, sel_box->height, state->border_radius);
+
+			if (state->bg_image) {
+				cairo_save(cairo);
+				draw_rounded_rect(cairo, sel_box->x, sel_box->y,
+					sel_box->width, sel_box->height, r);
+				cairo_clip(cairo);
+				cairo_set_source_surface(cairo, state->bg_image,
+					-output->logical_geometry.x, -output->logical_geometry.y);
+				cairo_paint(cairo);
+				cairo_restore(cairo);
+			} else {
+				draw_rounded_rect(cairo, sel_box->x, sel_box->y,
+					sel_box->width, sel_box->height, r);
+				set_source_u32(cairo, state->colors.selection);
+				cairo_fill(cairo);
+			}
+
 			draw_rounded_rect(cairo, sel_box->x, sel_box->y,
 				sel_box->width, sel_box->height, r);
-			set_source_u32(cairo, state->colors.selection);
-			cairo_fill_preserve(cairo);
-
 			cairo_set_line_width(cairo, state->border_weight);
 			set_source_u32(cairo, state->colors.border);
 			cairo_stroke(cairo);
