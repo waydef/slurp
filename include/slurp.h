@@ -59,6 +59,7 @@ struct slurp_state {
 
   double border_radius;
   double bg_alpha;
+  bool exiting;
   cairo_surface_t *bg_image;
   struct slurp_box result;
 };
@@ -113,6 +114,7 @@ struct slurp_seat {
   // animation:
   struct {
     double x, y, width, height;
+    double radius;
     double alpha;
     bool active;
   } anim;

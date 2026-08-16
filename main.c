@@ -145,6 +145,7 @@ static void seat_update_selection(struct slurp_seat *seat) {
 			seat->anim.y = seat->pointer_selection.selection.y;
 			seat->anim.width = seat->pointer_selection.selection.width;
 			seat->anim.height = seat->pointer_selection.selection.height;
+			seat->anim.radius = seat->state->border_radius;
 			seat->anim.alpha = 0.0;
 			seat->anim.active = true;
 		}
@@ -274,11 +275,13 @@ static void handle_selection_start(struct slurp_seat *seat,
 		state->result.x = current_selection->x;
 		state->result.y = current_selection->y;
 		state->result.width = state->result.height = 1;
-		state->running = false;
+		state->exiting = true;
+		seat_set_outputs_dirty(seat);
 	} else if (state->restrict_selection) {
 		if (current_selection->has_selection) {
 			state->result = current_selection->selection;
-			state->running = false;
+			state->exiting = true;
+			seat_set_outputs_dirty(seat);
 		}
 	} else {
 		current_selection->anchor_x = current_selection->x;
@@ -300,7 +303,8 @@ static void handle_selection_end(struct slurp_seat *seat,
 		state->result.width = state->result.height = 1;
 	}
 	state->resizing_selection = false;
-	state->running = false;
+	state->exiting = true;
+	seat_set_outputs_dirty(seat);
 }
 
 static void handle_selection_cancelled(struct slurp_seat *seat) {
@@ -655,16 +659,28 @@ static const struct wl_callback_listener output_frame_listener;
 
 static bool update_animations(struct slurp_state *state) {
 	bool animating = false;
-	double bg_speed = 0.16;
-	double anim_speed = 0.22;
+	double bg_in_speed = 0.16;
+	double bg_out_speed = 0.28;
+	double anim_speed = 0.24;
 
-	// 1. Smoothly fade in background veil on startup
-	if (state->bg_alpha < 1.0) {
-		state->bg_alpha += (1.0 - state->bg_alpha) * bg_speed;
-		if (1.0 - state->bg_alpha > 0.005) {
+	if (state->exiting) {
+		// Smooth fade-out on click or selection completion
+		state->bg_alpha += (0.0 - state->bg_alpha) * bg_out_speed;
+		if (state->bg_alpha > 0.02) {
 			animating = true;
 		} else {
-			state->bg_alpha = 1.0;
+			state->bg_alpha = 0.0;
+			state->running = false;
+		}
+	} else {
+		// Smooth fade-in on startup
+		if (state->bg_alpha < 1.0) {
+			state->bg_alpha += (1.0 - state->bg_alpha) * bg_in_speed;
+			if (1.0 - state->bg_alpha > 0.005) {
+				animating = true;
+			} else {
+				state->bg_alpha = 1.0;
+			}
 		}
 	}
 
@@ -673,18 +689,48 @@ static bool update_animations(struct slurp_state *state) {
 		if (!seat->anim.active) {
 			continue;
 		}
-		if (seat->pointer_selection.has_selection && seat->button_state == WL_POINTER_BUTTON_STATE_RELEASED) {
+
+		if (state->exiting) {
+			seat->anim.alpha += (0.0 - seat->anim.alpha) * bg_out_speed;
+			if (seat->anim.alpha > 0.02) {
+				animating = true;
+			}
+			continue;
+		}
+
+		// When dragging: smoothly morph corner radius to 0 and follow drag rectangle
+		if (seat->button_state == WL_POINTER_BUTTON_STATE_PRESSED && seat->pointer_selection.has_selection) {
 			struct slurp_box *target = &seat->pointer_selection.selection;
-			seat->anim.x += (target->x - seat->anim.x) * anim_speed;
-			seat->anim.y += (target->y - seat->anim.y) * anim_speed;
-			seat->anim.width += (target->width - seat->anim.width) * anim_speed;
-			seat->anim.height += (target->height - seat->anim.height) * anim_speed;
+			seat->anim.x += (target->x - seat->anim.x) * 0.45;
+			seat->anim.y += (target->y - seat->anim.y) * 0.45;
+			seat->anim.width += (target->width - seat->anim.width) * 0.45;
+			seat->anim.height += (target->height - seat->anim.height) * 0.45;
+			seat->anim.radius += (0.0 - seat->anim.radius) * 0.35;
 			seat->anim.alpha += (1.0 - seat->anim.alpha) * anim_speed;
 
 			if (fabs(seat->anim.x - target->x) > 0.5 ||
 			    fabs(seat->anim.y - target->y) > 0.5 ||
 			    fabs(seat->anim.width - target->width) > 0.5 ||
 			    fabs(seat->anim.height - target->height) > 0.5 ||
+			    fabs(seat->anim.radius) > 0.5 ||
+			    fabs(1.0 - seat->anim.alpha) > 0.005) {
+				animating = true;
+			}
+		} else if (seat->pointer_selection.has_selection) {
+			// When hovering windows: follow target window box with corner radius 20px
+			struct slurp_box *target = &seat->pointer_selection.selection;
+			seat->anim.x += (target->x - seat->anim.x) * anim_speed;
+			seat->anim.y += (target->y - seat->anim.y) * anim_speed;
+			seat->anim.width += (target->width - seat->anim.width) * anim_speed;
+			seat->anim.height += (target->height - seat->anim.height) * anim_speed;
+			seat->anim.radius += (state->border_radius - seat->anim.radius) * anim_speed;
+			seat->anim.alpha += (1.0 - seat->anim.alpha) * anim_speed;
+
+			if (fabs(seat->anim.x - target->x) > 0.5 ||
+			    fabs(seat->anim.y - target->y) > 0.5 ||
+			    fabs(seat->anim.width - target->width) > 0.5 ||
+			    fabs(seat->anim.height - target->height) > 0.5 ||
+			    fabs(state->border_radius - seat->anim.radius) > 0.5 ||
 			    fabs(1.0 - seat->anim.alpha) > 0.005) {
 				animating = true;
 			}
@@ -1081,6 +1127,7 @@ int main(int argc, char *argv[]) {
 		.border_weight = 2,
 		.border_radius = 20.0,
 		.bg_alpha = 0.0,
+		.exiting = false,
 		.bg_image = NULL,
 		.display_dimensions = false,
 		.restrict_selection = false,
