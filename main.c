@@ -650,11 +650,23 @@ static void destroy_output(struct slurp_output *output) {
 	free(output);
 }
 
+static void set_output_dirty(struct slurp_output *output);
 static const struct wl_callback_listener output_frame_listener;
 
 static bool update_animations(struct slurp_state *state) {
 	bool animating = false;
 	double speed = 0.24;
+
+	// 1. Smoothly fade in background veil on startup
+	if (state->bg_alpha < 1.0) {
+		state->bg_alpha += (1.0 - state->bg_alpha) * 0.20;
+		if (1.0 - state->bg_alpha > 0.01) {
+			animating = true;
+		} else {
+			state->bg_alpha = 1.0;
+		}
+	}
+
 	struct slurp_seat *seat;
 	wl_list_for_each(seat, &state->seats, link) {
 		if (!seat->anim.active) {
@@ -1013,6 +1025,7 @@ int main(int argc, char *argv[]) {
 		},
 		.border_weight = 2,
 		.border_radius = 20.0,
+		.bg_alpha = 0.0,
 		.display_dimensions = false,
 		.restrict_selection = false,
 		.resizing_selection = false,

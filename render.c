@@ -55,7 +55,7 @@ void render(struct slurp_output *output) {
 
 	// Clear
 	cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
-	set_source_u32(cairo, state->colors.background);
+	set_source_u32_alpha(cairo, state->colors.background, state->bg_alpha);
 	cairo_paint(cairo);
 
 	// Draw base option boxes from input

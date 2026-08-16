@@ -57,6 +57,7 @@ struct slurp_state {
   double aspect_ratio; // h / w
 
   double border_radius;
+  double bg_alpha;
   struct slurp_box result;
 };
 
