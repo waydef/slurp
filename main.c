@@ -14,6 +14,7 @@
 #include "slurp.h"
 #include "render.h"
 #include "lock.h"
+#include <math.h>
 
 #define BG_COLOR 0xFFFFFF40
 #define BORDER_COLOR 0x000000FF
@@ -53,36 +54,103 @@ static void move_seat(struct slurp_seat *seat, wl_fixed_t surface_x,
 	current_selection->y = y;
 }
 
+static double distance_to_box(const struct slurp_box *box, int x, int y) {
+	double dx = 0;
+	if (x < box->x) {
+		dx = box->x - x;
+	} else if (x > box->x + box->width) {
+		dx = x - (box->x + box->width);
+	}
+
+	double dy = 0;
+	if (y < box->y) {
+		dy = box->y - y;
+	} else if (y > box->y + box->height) {
+		dy = y - (box->y + box->height);
+	}
+
+	return sqrt(dx * dx + dy * dy);
+}
+
 static void seat_update_selection(struct slurp_seat *seat) {
 	seat->pointer_selection.has_selection = false;
 
-	// find smallest box intersecting the cursor
+	int px = seat->pointer_selection.x;
+	int py = seat->pointer_selection.y;
+
+	// Find the largest box area to distinguish full-monitor outputs from windows
+	int32_t max_box_area = 0;
 	struct slurp_box *box;
 	wl_list_for_each(box, &seat->state->boxes, link) {
-		if (in_box(box, seat->pointer_selection.x,
-			   seat->pointer_selection.y)) {
-			if (seat->pointer_selection.has_selection &&
-				box_size(
-					&seat->pointer_selection.selection) <
-					box_size(box)) {
-				continue;
+		int32_t area = box_size(box);
+		if (area > max_box_area) {
+			max_box_area = area;
+		}
+	}
+
+	// 1. Direct hit inside a window
+	struct slurp_box *direct_win = NULL;
+	wl_list_for_each(box, &seat->state->boxes, link) {
+		int32_t area = box_size(box);
+		if (area < max_box_area && in_box(box, px, py)) {
+			if (!direct_win || area < box_size(direct_win)) {
+				direct_win = box;
 			}
-			seat->pointer_selection.selection = *box;
+		}
+	}
+
+	if (direct_win) {
+		seat->pointer_selection.selection = *direct_win;
+		seat->pointer_selection.has_selection = true;
+	} else {
+		// 2. Proximity gap bridging between adjacent windows (within 35px)
+		struct slurp_box *closest_win = NULL;
+		double min_dist = 35.0;
+		wl_list_for_each(box, &seat->state->boxes, link) {
+			int32_t area = box_size(box);
+			if (area < max_box_area) {
+				double d = distance_to_box(box, px, py);
+				if (d < min_dist) {
+					min_dist = d;
+					closest_win = box;
+				}
+			}
+		}
+
+		if (closest_win) {
+			seat->pointer_selection.selection = *closest_win;
 			seat->pointer_selection.has_selection = true;
+		} else {
+			// 3. Fallback to desktop/monitor output box in outer margins
+			wl_list_for_each(box, &seat->state->boxes, link) {
+				if (in_box(box, px, py)) {
+					if (seat->pointer_selection.has_selection &&
+						box_size(&seat->pointer_selection.selection) < box_size(box)) {
+						continue;
+					}
+					seat->pointer_selection.selection = *box;
+					seat->pointer_selection.has_selection = true;
+				}
+			}
+		}
+	}
+
+	if (seat->pointer_selection.has_selection) {
+		if (!seat->anim.active) {
+			seat->anim.x = seat->pointer_selection.selection.x;
+			seat->anim.y = seat->pointer_selection.selection.y;
+			seat->anim.width = seat->pointer_selection.selection.width;
+			seat->anim.height = seat->pointer_selection.selection.height;
+			seat->anim.alpha = 0.0;
+			seat->anim.active = true;
 		}
 	}
 }
 
 static void seat_set_outputs_dirty(struct slurp_seat *seat) {
-	struct slurp_state *state = seat->state;
 	struct slurp_output *output;
 	wl_list_for_each(output, &seat->state->outputs, link) {
-		struct slurp_box *geometry = &output->logical_geometry;
-		if (box_intersect(geometry, &seat->pointer_selection.selection) ||
-				box_intersect(geometry, &seat->touch_selection.selection) ||
-				(state->crosshairs && in_box(geometry, seat->pointer_selection.x, seat->pointer_selection.y))) {
-			set_output_dirty(output);
-		}
+		set_output_dirty(output);
 	}
 }
 
@@ -580,6 +648,41 @@ static void destroy_output(struct slurp_output *output) {
 
 static const struct wl_callback_listener output_frame_listener;
 
+static bool update_animations(struct slurp_state *state) {
+	bool animating = false;
+	double speed = 0.24;
+	struct slurp_seat *seat;
+	wl_list_for_each(seat, &state->seats, link) {
+		if (!seat->anim.active) {
+			continue;
+		}
+		if (seat->pointer_selection.has_selection && seat->button_state == WL_POINTER_BUTTON_STATE_RELEASED) {
+			struct slurp_box *target = &seat->pointer_selection.selection;
+			seat->anim.x += (target->x - seat->anim.x) * speed;
+			seat->anim.y += (target->y - seat->anim.y) * speed;
+			seat->anim.width += (target->width - seat->anim.width) * speed;
+			seat->anim.height += (target->height - seat->anim.height) * speed;
+			seat->anim.alpha += (1.0 - seat->anim.alpha) * speed;
+
+			if (fabs(seat->anim.x - target->x) > 0.5 ||
+			    fabs(seat->anim.y - target->y) > 0.5 ||
+			    fabs(seat->anim.width - target->width) > 0.5 ||
+			    fabs(seat->anim.height - target->height) > 0.5 ||
+			    fabs(1.0 - seat->anim.alpha) > 0.01) {
+				animating = true;
+			}
+		} else {
+			seat->anim.alpha += (0.0 - seat->anim.alpha) * speed;
+			if (seat->anim.alpha > 0.01) {
+				animating = true;
+			} else {
+				seat->anim.alpha = 0.0;
+			}
+		}
+	}
+	return animating;
+}
+
 static void send_frame(struct slurp_output *output) {
 	struct slurp_state *state = output->state;
 
@@ -601,6 +704,8 @@ static void send_frame(struct slurp_output *output) {
 	cairo_scale(output->current_buffer->cairo, output->scale, output->scale);
 	cairo_translate(output->current_buffer->cairo, -output->logical_geometry.x, -output->logical_geometry.y);
 
+	bool is_animating = update_animations(state);
+
 	render(output);
 
 	// Schedule a frame in case the output becomes dirty again
@@ -616,6 +721,10 @@ static void send_frame(struct slurp_output *output) {
 	wl_surface_set_buffer_scale(output->surface, output->scale);
 	wl_surface_commit(output->surface);
 	output->dirty = false;
+
+	if (is_animating) {
+		set_output_dirty(output);
+	}
 }
 
 static void output_frame_handle_done(void *data, struct wl_callback *callback,
@@ -734,6 +843,7 @@ static const char usage[] =
 	"  -p           Select a single point.\n"
 	"  -r           Restrict selection to predefined boxes.\n"
 	"  -a w:h       Force aspect ratio.\n"
+	"  -R r         Set border radius (default: 20).\n"
 	"  -x           Display crosshairs across active display output.\n";
 
 uint32_t parse_color(const char *color) {
@@ -898,6 +1008,7 @@ int main(int argc, char *argv[]) {
 			.choice = BG_COLOR,
 		},
 		.border_weight = 2,
+		.border_radius = 20.0,
 		.display_dimensions = false,
 		.restrict_selection = false,
 		.resizing_selection = false,
@@ -910,7 +1021,7 @@ int main(int argc, char *argv[]) {
 	char *format = "%x,%y %wx%h\n";
 	bool output_boxes = false;
 	int w, h;
-	while ((opt = getopt(argc, argv, "hdb:c:s:B:w:proa:f:F:x")) != -1) {
+	while ((opt = getopt(argc, argv, "hdb:c:s:B:w:proa:f:F:xR:")) != -1) {
 		switch (opt) {
 		case 'h':
 			printf("%s", usage);
@@ -936,6 +1047,16 @@ int main(int argc, char *argv[]) {
 		case 'F':
 			state.font_family = optarg;
 			break;
+		case 'R': {
+			errno = 0;
+			char *endptr;
+			state.border_radius = strtod(optarg, &endptr);
+			if (*endptr || errno) {
+				fprintf(stderr, "Error: expected numeric argument for -R\n");
+				exit(EXIT_FAILURE);
+			}
+			break;
+		}
 		case 'w': {
 			errno = 0;
 			char *endptr;

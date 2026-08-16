@@ -56,6 +56,7 @@ struct slurp_state {
   bool fixed_aspect_ratio;
   double aspect_ratio; // h / w
 
+  double border_radius;
   struct slurp_box result;
 };
 
@@ -105,6 +106,13 @@ struct slurp_seat {
   // keymap:
   struct xkb_keymap *xkb_keymap;
   struct xkb_state *xkb_state;
+
+  // animation:
+  struct {
+    double x, y, width, height;
+    double alpha;
+    bool active;
+  } anim;
 
   // touch:
   struct wl_touch *wl_touch;
