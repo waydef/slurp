@@ -53,92 +53,92 @@ void render(struct slurp_output *output) {
 	struct pool_buffer *buffer = output->current_buffer;
 	cairo_t *cairo = buffer->cairo;
 
-	// 1. Draw base frame
+	// 1. Draw base frozen screenshot frame
 	if (state->bg_image) {
-		// Draw frozen snapshot
 		cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
 		cairo_set_source_surface(cairo, state->bg_image,
 			-output->logical_geometry.x, -output->logical_geometry.y);
 		cairo_paint(cairo);
-
-		// Draw smooth white veil over it
-		cairo_set_operator(cairo, CAIRO_OPERATOR_OVER);
-		set_source_u32_alpha(cairo, state->colors.background, state->bg_alpha);
-		cairo_paint(cairo);
-	} else {
-		// Standalone transparent overlay mode
-		cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
-		set_source_u32_alpha(cairo, state->colors.background, state->bg_alpha);
-		cairo_paint(cairo);
 	}
 
-	struct slurp_seat *seat;
-	wl_list_for_each(seat, &state->seats, link) {
-		struct slurp_selection *current_selection =
-			slurp_seat_current_selection(seat);
+	struct slurp_seat *seat = NULL;
+	if (!wl_list_empty(&state->seats)) {
+		seat = wl_container_of(state->seats.next, seat, link);
+	}
 
-		// Crosshairs if enabled
-		if (!current_selection->has_selection && state->crosshairs) {
-			struct slurp_box *output_box = &output->logical_geometry;
-			if (in_box(output_box, current_selection->x, current_selection->y)) {
-				set_source_u32(cairo, state->colors.border);
-				cairo_rectangle(cairo, output_box->x, current_selection->y, output->logical_geometry.width, 1);
-				cairo_fill(cairo);
-				cairo_rectangle(cairo, current_selection->x, output->logical_geometry.y, 1, output->logical_geometry.height);
-				cairo_fill(cairo);
-			}
+	// 2. Draw white veil EXCLUSIVELY outside the active window (window is never touched by white)
+	cairo_save(cairo);
+	if (state->bg_image) {
+		cairo_set_operator(cairo, CAIRO_OPERATOR_OVER);
+	} else {
+		cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
+	}
+	set_source_u32_alpha(cairo, state->colors.background, state->bg_alpha);
+
+	if (seat && seat->anim.active && seat->anim.alpha > 0.005) {
+		cairo_set_fill_rule(cairo, CAIRO_FILL_RULE_EVEN_ODD);
+		// Outer screen rectangle
+		cairo_rectangle(cairo, output->logical_geometry.x, output->logical_geometry.y,
+			output->logical_geometry.width, output->logical_geometry.height);
+		// Inner window hole (preserves active window 100% untouched)
+		double r = get_box_radius(output, seat->anim.width, seat->anim.height, seat->anim.radius);
+		draw_rounded_rect(cairo, seat->anim.x, seat->anim.y, seat->anim.width, seat->anim.height, r);
+		cairo_fill(cairo);
+	} else {
+		cairo_paint(cairo);
+	}
+	cairo_restore(cairo);
+
+	if (!seat) {
+		return;
+	}
+
+	struct slurp_selection *current_selection =
+		slurp_seat_current_selection(seat);
+
+	// Crosshairs if enabled
+	if (!current_selection->has_selection && state->crosshairs) {
+		struct slurp_box *output_box = &output->logical_geometry;
+		if (in_box(output_box, current_selection->x, current_selection->y)) {
+			set_source_u32(cairo, state->colors.border);
+			cairo_rectangle(cairo, output_box->x, current_selection->y, output->logical_geometry.width, 1);
+			cairo_fill(cairo);
+			cairo_rectangle(cairo, current_selection->x, output->logical_geometry.y, 1, output->logical_geometry.height);
+			cairo_fill(cairo);
 		}
+	}
 
-		// 2. Smooth animated highlight (works for hover, drag selection, and exit fade-out)
-		double effective_alpha = seat->anim.alpha * state->bg_alpha;
-		if (seat->anim.active && effective_alpha > 0.005) {
-			struct slurp_box anim_geom = {
-				.x = (int32_t)seat->anim.x,
-				.y = (int32_t)seat->anim.y,
-				.width = (int32_t)seat->anim.width,
-				.height = (int32_t)seat->anim.height,
-			};
-			if (box_intersect(&output->logical_geometry, &anim_geom)) {
-				double r = get_box_radius(output, seat->anim.width, seat->anim.height, seat->anim.radius);
+	// 3. Draw sleek border and dimensions around the active window cutout
+	double effective_alpha = seat->anim.alpha * state->bg_alpha;
+	if (seat->anim.active && effective_alpha > 0.005) {
+		struct slurp_box anim_geom = {
+			.x = (int32_t)seat->anim.x,
+			.y = (int32_t)seat->anim.y,
+			.width = (int32_t)seat->anim.width,
+			.height = (int32_t)seat->anim.height,
+		};
+		if (box_intersect(&output->logical_geometry, &anim_geom)) {
+			double r = get_box_radius(output, seat->anim.width, seat->anim.height, seat->anim.radius);
 
-				if (state->bg_image) {
-					// Cutout reveals original crystal-clear frozen image
-					cairo_save(cairo);
-					draw_rounded_rect(cairo, seat->anim.x, seat->anim.y,
-						seat->anim.width, seat->anim.height, r);
-					cairo_clip(cairo);
-					cairo_set_source_surface(cairo, state->bg_image,
-						-output->logical_geometry.x, -output->logical_geometry.y);
-					cairo_paint_with_alpha(cairo, effective_alpha);
-					cairo_restore(cairo);
-				} else {
-					draw_rounded_rect(cairo, seat->anim.x, seat->anim.y,
-						seat->anim.width, seat->anim.height, r);
-					set_source_u32_alpha(cairo, state->colors.selection, effective_alpha);
-					cairo_fill(cairo);
-				}
+			draw_rounded_rect(cairo, seat->anim.x, seat->anim.y,
+				seat->anim.width, seat->anim.height, r);
+			cairo_set_line_width(cairo, state->border_weight);
+			set_source_u32_alpha(cairo, state->colors.border, effective_alpha);
+			cairo_stroke(cairo);
 
-				// Draw crisp 1px border
-				draw_rounded_rect(cairo, seat->anim.x, seat->anim.y,
-					seat->anim.width, seat->anim.height, r);
-				cairo_set_line_width(cairo, state->border_weight);
-				set_source_u32_alpha(cairo, state->colors.border, effective_alpha);
-				cairo_stroke(cairo);
-
-				// Dimensions display when dragging
-				if (seat->button_state == WL_POINTER_BUTTON_STATE_PRESSED && state->display_dimensions) {
-					cairo_select_font_face(cairo, state->font_family,
-							       CAIRO_FONT_SLANT_NORMAL,
-							       CAIRO_FONT_WEIGHT_NORMAL);
-					cairo_set_font_size(cairo, 14);
-					set_source_u32(cairo, state->colors.border);
-					char dimensions[12];
-					snprintf(dimensions, sizeof(dimensions), "%ix%i",
-						 (int)seat->anim.width, (int)seat->anim.height);
-					cairo_move_to(cairo, seat->anim.x + seat->anim.width + 10,
-						      seat->anim.y + seat->anim.height + 20);
-					cairo_show_text(cairo, dimensions);
-				}
+			// Dimensions display when dragging
+			if (seat->button_state == WL_POINTER_BUTTON_STATE_PRESSED && state->display_dimensions) {
+				cairo_select_font_face(cairo, state->font_family,
+						       CAIRO_FONT_SLANT_NORMAL,
+						       CAIRO_FONT_WEIGHT_NORMAL);
+				cairo_set_font_size(cairo, 14);
+				set_source_u32(cairo, state->colors.border);
+				char dimensions[12];
+				snprintf(dimensions, sizeof(dimensions), "%ix%i",
+					 (int)seat->anim.width, (int)seat->anim.height);
+				cairo_move_to(cairo, seat->anim.x + seat->anim.width + 10,
+					      seat->anim.y + seat->anim.height + 20);
+				cairo_show_text(cairo, dimensions);
 			}
 		}
 	}

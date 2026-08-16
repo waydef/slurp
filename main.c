@@ -146,7 +146,7 @@ static void seat_update_selection(struct slurp_seat *seat) {
 			seat->anim.width = seat->pointer_selection.selection.width;
 			seat->anim.height = seat->pointer_selection.selection.height;
 			seat->anim.radius = seat->state->border_radius;
-			seat->anim.alpha = 0.0;
+			seat->anim.alpha = 1.0;
 			seat->anim.active = true;
 		}
 	}
