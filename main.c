@@ -659,23 +659,22 @@ static const struct wl_callback_listener output_frame_listener;
 
 static bool update_animations(struct slurp_state *state) {
 	bool animating = false;
-	double bg_in_speed = 0.16;
-	double bg_out_speed = 0.28;
-	double anim_speed = 0.24;
+	const double tempo = 0.13;
+	const double drag_tempo = 0.22;
 
 	if (state->exiting) {
-		// Smooth fade-out on click or selection completion
-		state->bg_alpha += (0.0 - state->bg_alpha) * bg_out_speed;
-		if (state->bg_alpha > 0.02) {
+		// Smooth uniform fade-out on click or selection completion
+		state->bg_alpha += (0.0 - state->bg_alpha) * tempo;
+		if (state->bg_alpha > 0.01) {
 			animating = true;
 		} else {
 			state->bg_alpha = 0.0;
 			state->running = false;
 		}
 	} else {
-		// Smooth fade-in on startup
+		// Smooth uniform fade-in on startup
 		if (state->bg_alpha < 1.0) {
-			state->bg_alpha += (1.0 - state->bg_alpha) * bg_in_speed;
+			state->bg_alpha += (1.0 - state->bg_alpha) * tempo;
 			if (1.0 - state->bg_alpha > 0.005) {
 				animating = true;
 			} else {
@@ -691,22 +690,22 @@ static bool update_animations(struct slurp_state *state) {
 		}
 
 		if (state->exiting) {
-			seat->anim.alpha += (0.0 - seat->anim.alpha) * bg_out_speed;
-			if (seat->anim.alpha > 0.02) {
+			seat->anim.alpha += (0.0 - seat->anim.alpha) * tempo;
+			if (seat->anim.alpha > 0.01) {
 				animating = true;
 			}
 			continue;
 		}
 
-		// When dragging: smoothly morph corner radius to 0 and follow drag rectangle
+		// When dragging: smoothly morph corner radius and follow drag rectangle
 		if (seat->button_state == WL_POINTER_BUTTON_STATE_PRESSED && seat->pointer_selection.has_selection) {
 			struct slurp_box *target = &seat->pointer_selection.selection;
-			seat->anim.x += (target->x - seat->anim.x) * 0.45;
-			seat->anim.y += (target->y - seat->anim.y) * 0.45;
-			seat->anim.width += (target->width - seat->anim.width) * 0.45;
-			seat->anim.height += (target->height - seat->anim.height) * 0.45;
-			seat->anim.radius += (0.0 - seat->anim.radius) * 0.35;
-			seat->anim.alpha += (1.0 - seat->anim.alpha) * anim_speed;
+			seat->anim.x += (target->x - seat->anim.x) * drag_tempo;
+			seat->anim.y += (target->y - seat->anim.y) * drag_tempo;
+			seat->anim.width += (target->width - seat->anim.width) * drag_tempo;
+			seat->anim.height += (target->height - seat->anim.height) * drag_tempo;
+			seat->anim.radius += (0.0 - seat->anim.radius) * tempo;
+			seat->anim.alpha += (1.0 - seat->anim.alpha) * tempo;
 
 			if (fabs(seat->anim.x - target->x) > 0.5 ||
 			    fabs(seat->anim.y - target->y) > 0.5 ||
@@ -719,12 +718,12 @@ static bool update_animations(struct slurp_state *state) {
 		} else if (seat->pointer_selection.has_selection) {
 			// When hovering windows: follow target window box with corner radius 20px
 			struct slurp_box *target = &seat->pointer_selection.selection;
-			seat->anim.x += (target->x - seat->anim.x) * anim_speed;
-			seat->anim.y += (target->y - seat->anim.y) * anim_speed;
-			seat->anim.width += (target->width - seat->anim.width) * anim_speed;
-			seat->anim.height += (target->height - seat->anim.height) * anim_speed;
-			seat->anim.radius += (state->border_radius - seat->anim.radius) * anim_speed;
-			seat->anim.alpha += (1.0 - seat->anim.alpha) * anim_speed;
+			seat->anim.x += (target->x - seat->anim.x) * tempo;
+			seat->anim.y += (target->y - seat->anim.y) * tempo;
+			seat->anim.width += (target->width - seat->anim.width) * tempo;
+			seat->anim.height += (target->height - seat->anim.height) * tempo;
+			seat->anim.radius += (state->border_radius - seat->anim.radius) * tempo;
+			seat->anim.alpha += (1.0 - seat->anim.alpha) * tempo;
 
 			if (fabs(seat->anim.x - target->x) > 0.5 ||
 			    fabs(seat->anim.y - target->y) > 0.5 ||
@@ -735,7 +734,7 @@ static bool update_animations(struct slurp_state *state) {
 				animating = true;
 			}
 		} else {
-			seat->anim.alpha += (0.0 - seat->anim.alpha) * anim_speed;
+			seat->anim.alpha += (0.0 - seat->anim.alpha) * tempo;
 			if (seat->anim.alpha > 0.005) {
 				animating = true;
 			} else {
