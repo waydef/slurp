@@ -1,16 +1,16 @@
 # slurp
 
-Select a region in a Wayland compositor and print it to standard output.
+select a region in a wayland compositor and print it to standard output.
 
-This fork adds smooth animations, rounded corners, and gap bridging for modern Wayland setups like Hyprland, Sway, and River.
+this fork adds smooth animations, rounded corners, and gap bridging for wayland compositors like hyprland, sway, and river.
 
-## Features added in this fork
+## features in this fork
 
-- **Rounded corners (`-R`)**: Renders boxes and selections with corner radiuses (default: 20px). Matches window rounding in modern compositors.
-- **Smooth hover animations**: Interpolates box size, position, and opacity when moving between windows instead of jumping abruptly.
-- **Window gap bridging**: Bridges small gaps between tiled windows so the selection glides across adjacent splits without snapping to the whole display.
+- rounded corners (`-r`): renders boxes and selections with corner radiuses (default: 20px), matching window rounding in modern compositors.
+- smooth hover animations: interpolates box geometry and opacity when moving between windows instead of snapping abruptly.
+- window gap bridging: bridges small gaps between tiled windows so the selection glides across adjacent splits without falling back to the whole display.
 
-## Dependencies
+## dependencies
 
 - `meson`
 - `ninja`
@@ -19,7 +19,7 @@ This fork adds smooth animations, rounded corners, and gap bridging for modern W
 - `libxkbcommon`
 - `scdoc` (optional, for man pages)
 
-## Building and installing
+## building and installing
 
 ```sh
 git clone https://github.com/waydef/slurp.git
@@ -29,32 +29,36 @@ ninja -C build
 sudo cp build/slurp /usr/local/bin/slurp
 ```
 
-## Usage
+## usage
 
-Select a region interactively:
+select a region interactively:
 
 ```sh
 slurp
 ```
 
-Custom corner radius (e.g. 12px, or 0 for sharp corners):
+custom corner radius (for example, 12px, or 0 for sharp corners):
 
 ```sh
-slurp -R 12
+slurp -r 12
 ```
 
-Select a window under Sway:
+select a window under sway:
 
 ```sh
 swaymsg -t get_tree | jq -r '.. | select(.pid? and .visible?) | .rect | "\(.x),\(.y) \(.width)x\(.height)"' | slurp
 ```
 
-Combined with grim to copy an area to clipboard:
+copy a selected area to clipboard with grim:
 
 ```sh
 grim -g "$(slurp)" - | wl-copy
 ```
 
-## License
+## license
 
-MIT. Original work by [Simon Ser](https://github.com/emersion/slurp) and contributors.
+mit. original work by simon ser and contributors.
+
+## кратко на русском
+
+форк утилиты slurp для wayland. добавляет скругление углов (-r), плавные анимации перехода рамки между окнами и преодоление межконтурных зазоров тайлинга (hyprland, sway, river).
